@@ -1,0 +1,420 @@
+package;
+
+import haxe.Exception;
+import hxp.*;
+import lime.tools.*;
+import sys.io.Process;
+
+using StringTools;
+
+/**
+ * This is the main project file for TechNotDrip Engine.
+ *
+ * This works exactly like an Project.xml but in Haxe Syntax.
+ */
+class Project extends HXProject
+{
+	/**
+	 * The version of TechNotDrip Engine.
+	 */
+	public final TECHNOTDRIP_VERSION:String = '0.1.0';
+
+	/**
+	 * `-DFUNKIN_DISCORD_RPC`
+	 * Whether the game should have Discord RPC.
+	 * Developers can set this by checking the flag above.
+	 */
+	public final FUNKIN_DISCORD_RPC:FeatureFlag = 'FUNKIN_DISCORD_RPC';
+
+	/**
+	 * `-DFUNKIN_DOX_GENERATION`
+	 * Whether the game should be compiled into dox instead.
+	 * Developers can set this by checking the flag above.
+	 */
+	public final FUNKIN_DOX_GENERATION:FeatureFlag = 'FUNKIN_DOX_GENERATION';
+
+	/**
+	 * `-DFUNKIN_GIT_DETAILS`
+	 * Whether the git hashes/branches should be shown in MenuState.
+	 * Developers can set this by checking the flag above.
+	 */
+	public final FUNKIN_GIT_DETAILS:FeatureFlag = 'FUNKIN_GIT_DETAILS';
+
+	/**
+	 * `-DFUNKIN_ASSETS_FORWARDING`
+	 * Whether the game should forward its asset fetching to the root of the repository.
+	 * Developers can set this by checking the flag above.
+	 */
+	public final FUNKIN_ASSETS_FORWARDING:FeatureFlag = 'FUNKIN_ASSETS_FORWARDING';
+
+	public function new()
+	{
+		super();
+		setenv('HAXEPATH', './'); // Fixes an issue for haxelibs that use native C++ files until Haxe 5 releases.
+
+		setupApplicationSettings();
+		setupWindowSettings();
+		setupPathSettings();
+		setupFeatureFlags();
+		setupHaxelibs();
+		setupHaxeDefines();
+		setupHaxeFlags();
+	}
+
+	public function setupApplicationSettings():Void
+	{
+		meta.title = 'Friday Night Funkin\': TechNotDrip Engine';
+		meta.version = TECHNOTDRIP_VERSION;
+		meta.packageName = 'org.tilnotdrip.technotdrip';
+		meta.company = 'TilNotDrip';
+
+		app.file = 'TechNotDrip';
+		app.main = 'funkin.FunkinGame';
+		app.preloader = 'flixel.system.FlxPreloader';
+	}
+
+	public function setupWindowSettings():Void
+	{
+		window.width = 1280;
+		window.height = 720;
+		window.background = 0;
+		window.hardware = true;
+		window.vsync = false;
+
+		if (platformType == WEB)
+		{
+			window.resizable = true;
+		}
+
+		if (platformType == DESKTOP)
+		{
+			window.orientation = LANDSCAPE;
+			window.fullscreen = false;
+			window.resizable = true;
+		}
+
+		if (platformType == MOBILE)
+		{
+			window.orientation = LANDSCAPE;
+			window.fullscreen = false;
+			window.resizable = false;
+			window.allowShaders = true;
+			window.requireShaders = true;
+			window.allowHighDPI = true;
+		}
+	}
+
+	public function setupPathSettings():Void
+	{
+		app.path = 'export/' + ((debug) ? 'debug' : 'release');
+
+		var excludeList:Array<String> = [];
+		excludeList.push((platformType == WEB) ? 'ogg' : 'mp3');
+
+		// TODO: Maybe scan the entire assets folder instead like base fnf.
+		includeAssets("assets", "assets", ['*'], excludeList);
+
+		addIcon('extras/appicons/icon16.png', 16);
+		addIcon('extras/appicons/icon32.png', 32);
+		addIcon('extras/appicons/icon64.png', 64);
+		addIcon('extras/appicons/icon.png');
+
+		sources.push('src');
+	}
+
+	public function setupFeatureFlags():Void
+	{
+		// The second parameter is the default value unless overridden!
+		FUNKIN_DISCORD_RPC.apply(this, platformType == DESKTOP && haxedefs.get('cpp')); // Will be enabled if its on desktop (windows, linux, mac)!
+		FUNKIN_DOX_GENERATION.apply(this, false); // Will always be false unless you wanna make a documentation website.
+		FUNKIN_GIT_DETAILS.apply(this, command != 'display' && isGitInitialized()); // Only show details when this is a git repository.
+		FUNKIN_ASSETS_FORWARDING.apply(this, platformType == DESKTOP && debug);
+	}
+
+	public function setupHaxelibs():Void
+	{
+		addHaxelib('lime', '8.2.2');
+		addHaxelib('openfl', '9.4.1');
+		addHaxelib('flixel', '6.1.0');
+		addHaxelib('flixel-addons', 'git');
+		addHaxelib('flixel-animate', 'git');
+		addHaxelib('flixel-controls', 'git');
+		addHaxelib('extension-androidtools', '2.1.1', platformType == MOBILE && haxedefs.get('android'));
+		addHaxelib('hxcpp-debug-server', 'git', debug);
+		addHaxelib('hxdiscord_rpc', '1.3.0', FUNKIN_DISCORD_RPC.isEnabled(this));
+		addHaxelib('thx.core', '0.44.0');
+		addHaxelib('thx.semver', '0.2.2');
+		addHaxelib('funkin.vis', 'git');
+		addHaxelib('grig.audio');
+	}
+
+	public function setupHaxeDefines():Void
+	{
+		addHaxeDefine('doc-gen', FUNKIN_DOX_GENERATION.isEnabled(this));
+		addHaxeDefine('FLX_CUSTOM_ASSETS_DIRECTORY', 'assets', FUNKIN_ASSETS_FORWARDING.isEnabled(this));
+		addHaxeDefine("lime_disable_assets_version");
+		addHaxeDefine('FLX_NO_DEBUG', !debug);
+		addHaxeDefine('FLX_NO_FOCUS_LOST_SCREEN');
+		addHaxeDefine('FLX_NO_HEALTH');
+		addHaxeDefine('FLX_NO_KEYBOARD', platformType == MOBILE);
+		addHaxeDefine('FLX_NO_MOUSE', platformType == MOBILE);
+		addHaxeDefine('FLX_NO_TOUCH', platformType != MOBILE);
+		addHaxeDefine('message.reporting', 'pretty');
+		addHaxeDefine('NAPE_RELEASE_BUILD', !debug);
+
+		if (FUNKIN_GIT_DETAILS.isEnabled(this))
+		{
+			addHaxeDefine('TND_GIT_HASH', getGitHash());
+			addHaxeDefine('TND_GIT_BRANCH', getGitBranch());
+			addHaxeDefine('TND_GIT_MODIFIED', getGitModified());
+		}
+
+		if (haxedefs.get('android'))
+		{
+			config.set("android.gradle-version", '7.4.2');
+			config.set("android.gradle-plugin", "7.3.1");
+			config.set('android.minimum-sdk-version', 16);
+			config.set('android.target-sdk-version', 29);
+		}
+	}
+
+	public function setupHaxeFlags():Void
+	{
+		addHaxeFlag('-dce no');
+		addHaxeFlag("--macro include('funkin')");
+		addHaxeFlag("--macro include('flixel', true, ['flixel.addons.editors.spine.*', 'flixel.addons.nape.*', 'flixel.system.macros.*', 'flixel.addons.tile.FlxRayCastTilemap'])");
+		addHaxeFlag("--macro addMetadata('@:build(funkin.util.macro.ZProperty.buildZProperty())', 'flixel.FlxBasic')");
+		addHaxeFlag("--macro addMetadata('@:build(funkin.util.macro.ZProperty.buildRearrangeFunction())', 'flixel.group.FlxTypedGroup')");
+		addHaxeFlag('--no-output', FUNKIN_DOX_GENERATION.isEnabled(this));
+		addHaxeFlag('-xml docs/dox/' + Std.string(target).toLowerCase() + '.xml', FUNKIN_DOX_GENERATION.isEnabled(this));
+	}
+
+	public function addHaxelib(name:String, version:String = '', conditions:Bool = true):Void
+	{
+		if (!conditions)
+			return;
+
+		haxelibs.push(new Haxelib(name, version));
+	}
+
+	public function addHaxeDefine(name:String, value:String = '', conditions:Bool = true):Void
+	{
+		if (!conditions)
+			return;
+
+		haxedefs.set(name, value);
+	}
+
+	public function addHaxeFlag(name:String, conditions:Bool = true):Void
+	{
+		if (!conditions)
+			return;
+
+		haxeflags.push(name);
+	}
+
+	public function addIcon(path:String, ?size:Int):Void
+	{
+		icons.push(new Icon(path, size));
+	}
+
+	function isGitInitialized():Bool
+	{
+		try
+		{
+			var gitProcess:Process = new Process('git', ['status']);
+
+			var exitCode:Int = gitProcess.exitCode();
+			gitProcess.close();
+
+			return exitCode == 0;
+		}
+		catch(e:Exception)
+		{
+			return false;
+		}
+
+	}
+
+	function getGitHash():String
+	{
+		try
+		{
+			var gitProcess:Process = new Process('git', ['rev-parse', 'HEAD']);
+
+			var gitHash:String = gitProcess.stdout.readLine().trim();
+			var exitCode:Int = gitProcess.exitCode();
+			gitProcess.close();
+
+			if (exitCode != 0)
+				throw new Exception("Non-Zero Exit Code");
+
+			return gitHash;
+		}
+		catch(e:Exception)
+		{
+			trace('[WARNING] Unable to get current git repository hash.');
+			return null;
+		}
+	}
+
+	function getGitBranch():String
+	{
+		try
+		{
+			var gitProcess:Process = new Process('git', ['rev-parse', '--abbrev-ref', 'HEAD']);
+
+			var gitBranch:String = gitProcess.stdout.readLine().trim();
+			var exitCode:Int = gitProcess.exitCode();
+			gitProcess.close();
+
+			if (exitCode != 0)
+				throw new Exception("Non-Zero Exit Code");
+
+			return gitBranch;
+		}
+		catch(e:Exception)
+		{
+			trace('[WARNING] Unable to get current git repository branch.');
+			return null;
+		}
+	}
+
+	function getGitModified():Bool
+	{
+		try
+		{
+			var gitProcess:Process = new Process('git', ['status', '--porcelain']);
+
+			var gitModifiedFiles:String = gitProcess.stdout.readLine().trim();
+			var exitCode:Int = gitProcess.exitCode();
+			gitProcess.close();
+
+			if (exitCode != 0)
+				throw new Exception("Non-Zero Exit Code");
+
+			return gitModifiedFiles.length > 0;
+		}
+		catch(e:Exception)
+		{
+			trace('[WARNING] Unable to get current git repository status.');
+			return false;
+		}
+
+	}
+}
+
+/**
+ * An object representing a feature flag, which can be enabled or disabled.
+ * Includes features such as automatic generation of compile defines and inversion.
+ */
+abstract FeatureFlag(String)
+{
+	static final INVERSE_PREFIX:String = "NO_";
+
+	public function new(input:String)
+	{
+		this = input;
+	}
+
+	@:from
+	public static function fromString(input:String):FeatureFlag
+	{
+		return new FeatureFlag(input);
+	}
+
+	/**
+	 * Enable/disable a feature flag if it is unset, and handle the inverse flag.
+	 * Doesn't override a feature flag that was set explicitly.
+	 * @param enableByDefault Whether to enable this feature flag if it is unset.
+	 */
+	public function apply(project:Project, enableByDefault:Bool = false):Void
+	{
+		// TODO: Name this function better?
+
+		if (isEnabled(project))
+		{
+			// If this flag was already enabled, disable the inverse.
+			getInverse().disable(project, false);
+		}
+		else if (getInverse().isEnabled(project))
+		{
+			// If the inverse flag was already enabled, disable this flag.
+			disable(project, false);
+		}
+		else
+		{
+			if (enableByDefault)
+			{
+				// Enable this flag if it was unset, and disable the inverse.
+				enable(project, true);
+			}
+			else
+			{
+				// Disable this flag if it was unset, and enable the inverse.
+				disable(project, true);
+			}
+		}
+	}
+
+	/**
+	 * Enable this feature flag by setting the appropriate compile define.
+	 *
+	 * @param project The project to modify.
+	 * @param andInverse Also disable the feature flag's inverse.
+	 */
+	public function enable(project:Project, andInverse:Bool = true)
+	{
+		project.haxedefs.set(this, "");
+		if (andInverse)
+		{
+			getInverse().disable(project, false);
+		}
+	}
+
+	/**
+	 * Disable this feature flag by removing the appropriate compile define.
+	 *
+	 * @param project The project to modify.
+	 * @param andInverse Also enable the feature flag's inverse.
+	 */
+	public function disable(project:Project, andInverse:Bool = true)
+	{
+		project.haxedefs.remove(this);
+		if (andInverse)
+		{
+			getInverse().enable(project, false);
+		}
+	}
+
+	/**
+	 * Query if this feature flag is enabled.
+	 * @param project The project to query.
+	 */
+	public function isEnabled(project:Project):Bool
+	{
+		// Check both Haxedefs and Defines for this flag.
+		return project.haxedefs.exists(this) || project.defines.exists(this);
+	}
+
+	/**
+	 * Query if this feature flag's inverse is enabled.
+	 */
+	public function isDisabled(project:Project):Bool
+	{
+		return getInverse().isEnabled(project);
+	}
+
+	/**
+	 * Return the inverse of this feature flag.
+	 * @return A new feature flag that is the inverse of this one.
+	 */
+	public function getInverse():FeatureFlag
+	{
+		if (this.startsWith(INVERSE_PREFIX))
+		{
+			return this.substring(INVERSE_PREFIX.length);
+		}
+		return INVERSE_PREFIX + this;
+	}
+}
